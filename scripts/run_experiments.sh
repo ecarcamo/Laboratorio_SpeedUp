@@ -8,7 +8,7 @@ binary="$root_dir/src/lab12"
 mkdir -p "$raw_dir" "$log_dir"
 
 build() {
-  make -C "$root_dir/src" 2>&1 | tee "$log_dir/make.log"
+  make -B -C "$root_dir/src" 2>&1 | tee "$log_dir/make.log"
 }
 
 run_case() {
@@ -42,13 +42,15 @@ run_gustafson() {
   run_case gustafson.csv gustafson
 }
 
-target="${1:-all}"
+targets=("${@:-all}")
 build
-case "$target" in
-  amdahl) run_amdahl ;;
-  suma) run_suma ;;
-  desbalance) run_desbalance ;;
-  gustafson) run_gustafson ;;
-  all) run_amdahl; run_suma; run_desbalance; run_gustafson ;;
-  *) echo "uso: $0 [all|amdahl|suma|desbalance|gustafson]" >&2; exit 1 ;;
-esac
+for target in "${targets[@]}"; do
+  case "$target" in
+    amdahl) run_amdahl ;;
+    suma) run_suma ;;
+    desbalance) run_desbalance ;;
+    gustafson) run_gustafson ;;
+    all) run_amdahl; run_suma; run_desbalance; run_gustafson ;;
+    *) echo "uso: $0 [all|amdahl|suma|desbalance|gustafson]..." >&2; exit 1 ;;
+  esac
+done
