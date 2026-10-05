@@ -178,7 +178,90 @@ Le respondemos: «Con 64 núcleos el programa bajaría de 20 s a 2.28 s (S = 8.8
 
 ## Parte 2 — ¿Vale la pena paralelizar algo pequeño?
 
-_(Se completa después de medir.)_
+### 2a. El Ts honesto
+
+Datos: fila p = 1 de `amdahl_fp100.csv` → `t_seq = 0.504553 s` (sin OpenMP) y `t_par = 0.502151 s` (OpenMP con 1 hilo).
+
+**Predicción:** OpenMP con 1 hilo sería 1–5 % más lento. **Medido:** fue **0.48 % más rápido**. La predicción falló en el signo, y la razón es la escala: el overhead de abrir una región paralela es de microsegundos y aquí el trabajo dura medio segundo, así que la diferencia queda dentro del ruido de medición.
+
+**1. ¿Cuál es más rápido y por cuánto?**
+
+(0.504553 − 0.502151) / 0.504553 = **0.48 %** a favor de la versión OpenMP con 1 hilo. En las otras cuatro corridas de amdahl, la misma comparación da entre −2.5 % y +0.9 %:
+
+| fp | t_seq (s) | t_par, p = 1 (s) | Diferencia |
+|---|---|---|---|
+| 1.00 | 0.504553 | 0.502151 | OpenMP 0.48 % más rápido |
+| 0.95 | 0.504368 | 0.499791 | OpenMP 0.91 % más rápido |
+| 0.90 | 0.501464 | 0.501529 | OpenMP 0.01 % más lento |
+| 0.75 | 0.511521 | 0.524324 | OpenMP 2.50 % más lento |
+| 0.50 | 0.541656 | 0.540567 | OpenMP 0.20 % más rápido |
+
+Con trabajos grandes son prácticamente iguales. Con trabajos chicos la diferencia se vuelve enorme: en `suma.csv`, con N = 1024 la versión OpenMP de 1 hilo tarda 551 ns frente a 380 ns de la secuencial (**45 % más lenta**), y con N = 16 tarda 155 ns frente a ≈ 2 ns.
+
+**2. Usar como Ts el programa paralelo con 1 hilo**
+
+El speedup sale **inflado**. La versión paralela con 1 hilo paga el overhead de OpenMP (crear el equipo, repartir, `reduction`, barrera) sin ganar nada a cambio, así que T1,par ≥ Ts y S = T1,par / Tp ≥ Ts / Tp. Es tramposo porque compara contra una versión secuencial artificialmente lenta: la pregunta honesta es cuánto mejora frente al mejor programa secuencial que existe. Con nuestros datos de N = 1024, ese truco inflaría todos los speedups un **45 %** (0.551 / 0.380 = 1.45).
+
+### 2b. Sumar N números
+
+Comando: `./lab12 suma` → `results/raw/suma.csv`. Gráfica: `figures/suma_speedup.png`.
+
+| N | Ts | S (p=1) | S (p=2) | S (p=4) | S (p=8) | S (p=16) | S (p=32) |
+|---|---|---|---|---|---|---|---|
+| 16 | ≈ 2 ns | 0.013 | 0.0006 | 0.0004 | 0.0003 | 0.0002 | **0.0001** |
+| 1 024 | 380 ns | 0.69 | 0.12 | 0.08 | 0.05 | 0.03 | 0.01 |
+| 65 536 | 33.7 µs | 1.18 | 1.80 | **3.01** | 1.89 | 1.90 | 1.06 |
+| 1 048 576 | 494 µs | 1.02 | 1.90 | 2.31 | 3.65 | **5.56** | 4.80 |
+| 16 777 216 | 9.02 ms | 1.01 | 1.85 | 2.40 | 2.26 | 2.29 | 2.34 |
+
+> El CSV imprime los tiempos con 9 decimales (resolución de 1 ns), así que para N = 16 el Ts de ≈ 2 ns tiene un error de hasta ±25 %. El orden de magnitud no cambia.
+
+**Predicción frente a lo medido:** dijimos que lo paralelo empezaría a ganar en N ≈ 65 536. Se cumplió: con 1024 todavía pierde con cualquier p, y con 65 536 ya gana (S = 3.0 con p = 4). Lo que no previmos es que, con N = 65 536, usar 32 hilos casi empata con la versión secuencial (S = 1.06): más hilos no siempre es mejor.
+
+**3. N = 16 y p = pmax**
+
+S = 0.000000002 / 0.000029963 ≈ **0.0001**: la versión paralela con 32 hilos es **≈ 15 000 veces más lenta** (30 µs frente a 2 ns; entre ≈ 12 000 y 20 000 veces por la resolución de 1 ns).
+
+**4. El modelo de dos fases de clase**
+
+El modelo cuenta solo sumas: Tp = (16/4 − 1) + log₂4 = 5 sumas, y supone que **pasar un resultado parcial y sincronizar a los hilos es gratis** o cuesta lo mismo que una suma. En la máquina, una suma cuesta ≈ 0.1–0.2 ns, pero abrir la región paralela, repartir, combinar el `reduction` y esperar en la barrera cuesta ≈ 5 µs con p = 4: el equivalente a **decenas de miles de sumas**. La fuga es **η_c (comunicación y sincronización)**.
+
+**5. Lo que OpenMP hace en cada `parallel for` además de sumar**
+
+1. Despertar a los hilos del equipo (la primera vez, crearlos), que estaban dormidos o en espera activa.
+2. Calcular el bloque de iteraciones que le toca a cada hilo (`schedule(static)`).
+3. Crear la copia privada de `s` en cada hilo e inicializarla en 0.
+4. Traer los datos de `a[]` a la caché de cada núcleo; si estaban en la caché de otro núcleo, moverlos.
+5. Combinar las copias privadas en el `reduction` (cada hilo publica su parcial y se juntan de forma sincronizada).
+6. Esperar a todos en la barrera implícita al final del ciclo.
+7. Devolver los hilos a espera y seguir solo con el hilo principal.
+
+Con N = 16, todo el tiempo se va en esos pasos: sumar toma ≈ 2 ns de los 5 300 ns que tarda con p = 4. Además, el overhead crece con p: 3.6 µs (p = 2), 5.3 µs (p = 4), 7.8 µs (p = 8), 12.5 µs (p = 16) y 30 µs (p = 32). Más hilos son más hilos que despertar y que esperar en la barrera, y con p > 8 entran núcleos E de otros clústeres.
+
+**6. ¿Desde qué N conviene paralelizar?**
+
+Sumar un número cuesta ≈ 0.5 ns (33.7 µs / 65 536). Paralelizar ahorra N · 0.5 ns · (1 − 1/p) y cuesta el overhead de la región paralela:
+
+| p | Overhead medido (N = 16) | N mínimo para empatar ≈ overhead / (0.5 ns · (1 − 1/p)) |
+|---|---|---|
+| 2 | 3.6 µs | ≈ 14 000 |
+| 4 | 5.3 µs | ≈ 14 000 |
+| 32 | 30 µs | ≈ 62 000 |
+
+En nuestro equipo conviene **desde N ≈ 10⁴ con pocos hilos y desde N ≈ 6·10⁴ con los 32**. Encaja con lo medido: con N = 65 536 y p = 32 obtuvimos S = 1.06, justo en el empate.
+
+**Regla práctica:** un `parallel for` vale la pena cuando el trabajo de la región es mucho mayor que su overhead, unas **decenas de microsegundos de trabajo como mínimo** (≥ 10⁴–10⁵ operaciones simples). Si el trabajo es mediano, usar menos hilos que núcleos. Y si el ciclo se ejecuta muchas veces, abrir la región paralela una sola vez afuera.
+
+**7. Con N grande, ¿llega S a p?**
+
+No. Con N = 16 777 216 (128 MiB, no cabe en los 36 MiB de L3), S se estanca en **≈ 2.3–2.4 desde p = 4** y no mejora con 8, 16 ni 32 hilos. Cada número se lee de memoria y se usa para una sola suma, así que el límite es el **ancho de banda de la memoria RAM, que comparten todos los núcleos**:
+
+- Secuencial: 134 MB / 9.02 ms ≈ **14.9 GB/s**.
+- Paralelo (p = 4): 134 MB / 3.75 ms ≈ **35.8 GB/s**, el techo práctico de la memoria de esta laptop. Más hilos ya no pueden leer más rápido.
+
+En cambio, con N = 1 048 576 (8 MiB, cabe en la L3 de 36 MiB, y con 16 hilos cada pedazo de 512 KiB cabe en la L2 de su núcleo) S llega a 5.56 con p = 16, porque las cachés dan mucho más ancho de banda que la RAM.
+
+**¿Encaja en las cuatro fugas?** No de forma limpia. No es parte secuencial (η_f), ni desbalance (η_b), ni trabajo repetido (η_r), ni sincronización (η_c): los hilos no se esperan entre sí, compiten por un **recurso de hardware compartido** (el bus de memoria). Lo más parecido sería η_c si contamos el traer datos de memoria como «comunicación», pero el efecto lo explica el hardware, no el algoritmo. Lo dejamos para la síntesis como algo que no encaja.
 
 ---
 
