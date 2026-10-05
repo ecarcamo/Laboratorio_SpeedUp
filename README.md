@@ -17,7 +17,7 @@ Computación Paralela y Distribuida · Universidad del Valle de Guatemala
 | `results/raw/` | Los 10 CSV originales (5 amdahl, 1 suma, 3 desbalance, 1 gustafson) |
 | `results/derived/` | Los `*_con_S_E.csv` generados por `graficar.py` y tablas auxiliares |
 | `figures/` | Las 7 gráficas generadas por `graficar.py` |
-| `evidence/` | Datos del equipo, salida de `make` y bitácoras de cada corrida |
+| `evidence/` | Datos del equipo, salida de `make`, bitácoras de cada corrida y capturas en `screenshots/` |
 | `report/` | Reporte en Markdown (base de `reporte_lab12.pdf`) |
 
 ## Cómo reproducir
