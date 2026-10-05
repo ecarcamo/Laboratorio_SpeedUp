@@ -55,6 +55,10 @@ Comandos: `./lab12 amdahl 400000 {1.00,0.95,0.90,0.75,0.50}` → `results/raw/am
 | fp = 1.00, p = 32 | ≈ 16 | **15.28** | Acertamos el orden. El máximo real no está en p = 32 sino en **p = 24 (S = 16.28)**: al pasar a 25 hilos empieza el Hyper-Threading y S cae a 12.81. |
 | fp = 0.90, p = 32 | ≈ 6–7 | **5.91** | Un poco por debajo. La parte paralela pierde lo mismo que con fp = 1.00 (núcleos E y HT) y además la parte secuencial se vuelve un poco más lenta cuando hay muchos hilos (ver pregunta 6). |
 
+![Speedup de amdahl](../figures/amdahl_speedup.png)
+
+![Eficiencia de amdahl](../figures/amdahl_eficiencia.png)
+
 ### Tabla (pmax = 32)
 
 | fp | S (p=2) | S (p=4) | S (pmax) | E (pmax) | p con F máxima | p con Tp mínimo |
@@ -205,6 +209,8 @@ El speedup sale **inflado**. La versión paralela con 1 hilo paga el overhead de
 ### 2b. Sumar N números
 
 Comando: `./lab12 suma` → `results/raw/suma.csv`. Gráfica: `figures/suma_speedup.png`.
+
+![Speedup de suma](../figures/suma_speedup.png)
 
 | N | Ts | S (p=1) | S (p=2) | S (p=4) | S (p=8) | S (p=16) | S (p=32) |
 |---|---|---|---|---|---|---|---|
