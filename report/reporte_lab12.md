@@ -376,7 +376,84 @@ En una CPU así, `static` solo queda bien balanceado si se fijan los hilos a nú
 
 ## Parte 4 — ¿Y si el problema crece con los núcleos?
 
-_(Pendiente — Nicolás.)_
+Comando: `./lab12 gustafson` → `results/raw/gustafson.csv` (parte secuencial fija de 20 000 unidades y 100 000 unidades paralelas por hilo). Gráficas: `figures/gustafson_speedup.png` y `figures/gustafson_eficiencia.png`. Detalle en `results/derived/gustafson_con_S_E.csv`; la columna s y el modelo de la pregunta 4 se generan con `python3 scripts/gustafson_s.py` → `results/derived/gustafson_s.md`.
+
+### Predicción frente a lo medido
+
+| Caso | Predicción | Medido | ¿Por qué la diferencia? |
+|---|---|---|---|
+| Modelo de la Parte 1 con fp = 0.83 | S∞ = 1/0.17 ≈ **5.9**; con p = 32, ≈ **5.1** | **S = 15.13** con p = 32 | Casi 3 veces más. El modelo de la Parte 1 supone un problema fijo; aquí el problema crece con p y la parte secuencial pesa cada vez menos (preguntas 2 y 3). |
+| ¿Pasará lo mismo aquí? | **No**: S crecerá casi en línea recta con p, muy por encima de 6 | S pasa de 5.81 (p = 8) a 10.14 (p = 16) y 15.02 (p = 24) | Acertamos: S ≈ 0.63·p hasta p = 24, sin acercarse a ningún techo. La pendiente es menor que 1 por los núcleos E y el turbo; desde p = 25 el HT la frena (12.41 con p = 25 y 15.13 con p = 32). |
+
+![Speedup de gustafson](../figures/gustafson_speedup.png)
+
+![Eficiencia de gustafson](../figures/gustafson_eficiencia.png)
+
+### Preguntas
+
+**1. ¿Cómo cambian t_par y t_seq conforme crece p?**
+
+- **t_seq crece casi en línea recta**: 0.160 s (p = 1), 1.056 s (p = 8), 1.986 s (p = 16), 3.937 s (p = 32). La pendiente es (3.937 − 0.160) / 31 ≈ **0.122 s por hilo**, lo que tarda un núcleo en hacer las 100 000 unidades que se agregan con cada hilo (≈ 1.2 µs por unidad). El problema mide 20 000 + 100 000·p unidades, y t_seq es ese problema completo en un solo núcleo.
+- **t_par casi no se mueve**: 0.157 s (p = 1), 0.182 s (p = 8), 0.196 s (p = 16), 0.197 s (p = 24). Cada hilo siempre tiene sus mismas 100 000 unidades y la parte secuencial es siempre la misma (≈ 0.026 s), así que en una máquina ideal t_par sería constante. Sube un 25 % hasta p = 24 porque entran núcleos E y baja el turbo, y da un salto a ≈ 0.25–0.26 s desde p = 25, cuando dos hilos comparten un núcleo P por HT.
+
+Como S = t_seq / t_par, el numerador crece con p y el denominador se queda casi quieto: el speedup crece casi proporcional a p.
+
+**2. S(pmax) frente al modelo de la Parte 1 con fp = 0.83**
+
+Modelo de la Parte 1: S(32) = 1 / (0.17 + 0.83/32) = 1 / 0.1959 = **5.10**. Medido: **15.13**, **2.97 veces más** (y 2.6 veces el S∞ = 5.9 que el modelo dice que nunca se puede pasar).
+
+El código es el mismo (`programa_seq` y `programa_par`); lo que cambia es **qué problema se compara**. fp = 0.83 es la fracción paralela del problema de p = 1 (100 000 de 120 000 unidades). En la Parte 1 el problema era fijo, así que fp no cambiaba con p. Aquí, con cada hilo el problema crece y la parte secuencial queda igual, así que la fracción paralelizable del problema que se resuelve con p hilos es:
+
+$$f_p(p) = \frac{100\,000\,p}{20\,000 + 100\,000\,p} \;\Rightarrow\; f_p(32) = \frac{3\,200\,000}{3\,220\,000} = 0.9938$$
+
+Con ese fp, el mismo modelo de la Parte 1 da S(32) = 1 / (0.0062 + 0.9938/32) = **26.8**. El modelo no estaba mal: lo estábamos usando con la fracción de otro problema. La parte secuencial pasa de ser el 17 % del trabajo a ser el 0.6 %, y el techo 1/(1 − fp) se va a 161. Lo que nos separa de 26.8 ya no es la parte secuencial sino el hardware (pregunta 4).
+
+**3. s = t_parte_seq / t_par para cada fila**
+
+| p | t_seq (s) | t_par (s) | t_parte_seq (s) | S | s = t_parte_seq / t_par |
+|---|---|---|---|---|---|
+| 1 | 0.160 | 0.157 | 0.0274 | 1.02 | 0.174 |
+| 2 | 0.288 | 0.159 | 0.0277 | 1.81 | 0.174 |
+| 3 | 0.411 | 0.160 | 0.0275 | 2.56 | 0.171 |
+| 4 | 0.535 | 0.170 | 0.0264 | 3.15 | 0.155 |
+| 5 | 0.637 | 0.163 | 0.0268 | 3.91 | 0.165 |
+| 6 | 0.774 | 0.174 | 0.0277 | 4.45 | 0.159 |
+| 7 | 0.906 | 0.175 | 0.0268 | 5.19 | 0.154 |
+| 8 | 1.056 | 0.182 | 0.0270 | 5.81 | 0.149 |
+| 9 | 1.127 | 0.189 | 0.0262 | 5.97 | 0.139 |
+| 10 | 1.254 | 0.193 | 0.0257 | 6.50 | 0.133 |
+| 11 | 1.375 | 0.192 | 0.0263 | 7.17 | 0.137 |
+| 12 | 1.495 | 0.196 | 0.0275 | 7.64 | 0.140 |
+| 13 | 1.618 | 0.192 | 0.0257 | 8.43 | 0.134 |
+| 14 | 1.741 | 0.193 | 0.0263 | 9.01 | 0.136 |
+| 15 | 1.865 | 0.196 | 0.0267 | 9.54 | 0.136 |
+| 16 | 1.986 | 0.196 | 0.0256 | 10.14 | 0.131 |
+| 17 | 2.110 | 0.195 | 0.0263 | 10.85 | 0.135 |
+| 18 | 2.243 | 0.195 | 0.0256 | 11.50 | 0.131 |
+| 19 | 2.352 | 0.195 | 0.0257 | 12.05 | 0.131 |
+| 20 | 2.471 | 0.194 | 0.0262 | 12.72 | 0.135 |
+| 21 | 2.613 | 0.197 | 0.0262 | 13.27 | 0.133 |
+| 22 | 2.715 | 0.195 | 0.0261 | 13.90 | 0.133 |
+| 23 | 2.835 | 0.198 | 0.0257 | 14.33 | 0.130 |
+| 24 | 2.957 | 0.197 | 0.0258 | 15.02 | 0.131 |
+| 25 | 3.079 | 0.248 | 0.0259 | 12.41 | 0.104 |
+| 26 | 3.201 | 0.204 | 0.0289 | 15.71 | 0.142 |
+| 27 | 3.329 | 0.248 | 0.0256 | 13.41 | 0.103 |
+| 28 | 3.449 | 0.256 | 0.0256 | 13.49 | 0.100 |
+| 29 | 3.564 | 0.261 | 0.0266 | 13.65 | 0.102 |
+| 30 | 3.692 | 0.256 | 0.0259 | 14.41 | 0.101 |
+| 31 | 3.809 | 0.265 | 0.0258 | 14.35 | 0.097 |
+| 32 | 3.937 | 0.260 | 0.0262 | 15.13 | 0.101 |
+
+**No se mantiene: baja de 0.174 (p = 1) a ≈ 0.13 (p = 16–24) y a ≈ 0.10 (p ≥ 25).** Pero no es porque la parte secuencial se achique: t_parte_seq se queda en **0.026 s** en todas las filas (entre 0.0256 y 0.0289 s). Lo que cambia es el denominador: t_par sube cuando entran los núcleos E (de 0.157 a 0.197 s) y da un salto con el HT (≈ 0.25 s), así que la misma parte secuencial es una fracción menor del tiempo total. Los dos escalones de s coinciden con esos dos cambios de hardware (p = 9 y p = 25).
+
+En una máquina con núcleos iguales, s quedaría fija en ≈ 1/6 ≈ 0.167, la fracción de las 20 000 unidades secuenciales sobre las 120 000 que hace el hilo principal (20 000 suyas más sus 100 000 paralelas). Con p = 1 medimos 0.174, prácticamente eso.
+
+Ojo con no confundir las dos fracciones: s es la fracción secuencial **del tiempo paralelo** (≈ constante en teoría) y 1 − fp es la fracción secuencial **del trabajo total en un núcleo** (baja de 0.17 a 0.006, pregunta 2).
+
+### Preguntas 4 y 5
+
+_(Pendiente.)_
 
 ---
 
