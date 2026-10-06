@@ -299,7 +299,78 @@ La predicción acertó el fenómeno: con `static` el speedup se queda muy por de
 
 ### Preguntas
 
-_(Pendiente.)_
+**1. Comparar S(pmax) de los tres schedules**
+
+Con p = 32 gana **`guided` con S = 16.06**, seguido de `dynamic` (14.72) y muy atrás `static` (9.83):
+
+| Comparación | Diferencia en S(32) | En veces |
+|---|---|---|
+| `guided` frente a `static` | 16.06 − 9.83 = 6.23 → **63 % más** | **1.63×** |
+| `dynamic` frente a `static` | 14.72 − 9.83 = 4.89 → **50 % más** | **1.50×** |
+| `guided` frente a `dynamic` | 16.06 − 14.72 = 1.34 → **9 % más** | **1.09×** |
+
+Ojo con la comparación entre `guided` y `dynamic`: la corrida de `guided` midió un Ts de 54.88 ms, un 11 % mayor que el de las otras dos (≈ 49.2 ms), y eso infla su S (por eso también sale E = 1.08 con p = 2). Si comparamos directamente los tiempos con p = 32, `dynamic` tarda 3.34 ms y `guided` 3.42 ms: **empatan** (2 % de diferencia), y los dos son ≈ **1.5 veces más rápidos que `static`** (5.01 ms). La conclusión no cambia: repartir en tiempo de ejecución gana por mucho a repartir bloques fijos cuando el costo de las iteraciones no es uniforme.
+
+**2. Fracción del trabajo del hilo más cargado con `static`, a mano**
+
+Normalizamos el rango de iteraciones a x ∈ [0, 1]. El costo de la iteración es una recta, c(x) = x (el `1 +` del código solo agrega 1 vuelta frente a hasta 2001, lo despreciamos). El trabajo de un bloque [a, b] es el área bajo la recta, un trapecio:
+
+$$\text{trabajo}(a, b) = \int_a^b x\,dx = \frac{b^2 - a^2}{2} = \underbrace{(b - a)}_{\text{altura}} \cdot \underbrace{\frac{a + b}{2}}_{\text{base media}}$$
+
+El trabajo total es trabajo(0, 1) = 1/2. Con `static`, el hilo más cargado es el último, con el bloque [(p − 1)/p, 1]:
+
+$$\text{fracción}_{\text{último}} = \frac{\big(1 - ((p-1)/p)^2\big)/2}{1/2} = 1 - \left(\frac{p-1}{p}\right)^2 = \frac{2p - 1}{p^2}$$
+
+El tiempo lo marca ese hilo, así que S ≈ 1 / fracción = p² / (2p − 1).
+
+- **p = 2:** bloque [1/2, 1]. Trapecio de altura 1/2 y bases 1/2 y 1 → área = (1/2)·(3/4) = 3/8. Fracción = (3/8)/(1/2) = **3/4 = 75 %**. S ≈ 4/3 = **1.33**. Medido: **1.31** (98 % de lo previsto).
+- **p = 4:** bloque [3/4, 1]. Trapecio de altura 1/4 y bases 3/4 y 1 → área = (1/4)·(7/8) = 7/32. Fracción = (7/32)/(1/2) = **7/16 = 43.75 %**. S ≈ 16/7 = **2.29**. Medido: **2.03** (89 %).
+
+Con el `1 +` incluido las fracciones son 0.7498 y 0.4373: no cambia nada. Para p = 4, el primer hilo hace solo 1/16 = 6.25 % del trabajo: **el último trabaja 7 veces más que el primero**.
+
+La misma fórmula con p = 32 da 63/1024 = 6.2 % y S ≈ 16.25, pero medimos 9.83 (60 %). Con muchos hilos se suma el hardware: el bloque más caro puede caer en un núcleo E o en un hilo HT que comparte núcleo (pregunta 5), y la diferencia de velocidad entre un núcleo E (4.0 GHz) y un P (5.6 GHz) es de ese orden.
+
+**3. ¿Qué hacen los primeros hilos mientras el último termina?**
+
+Nada útil: terminan su bloque barato y **esperan en la barrera implícita** al final del `parallel for` (primero girando en espera activa y después dormidos). Con p = 4, el hilo 0 termina su 1/16 del trabajo cuando el último lleva apenas 1/7 de su bloque, así que pasa ≈ 86 % de la región esperando.
+
+En la eficiencia se ve directo. Si el último hilo hace la fracción (2p − 1)/p², la eficiencia ideal de `static` es E = S/p = p/(2p − 1), que vale 0.67 con p = 2, 0.57 con p = 4 y **tiende a 0.5**: aun sin ningún otro problema, la mitad del tiempo de los hilos se pierde esperando. Medido:
+
+| p | E `static` | E `dynamic` | E `guided` |
+|---|---|---|---|
+| 2 | 0.65 | 0.95 | 1.08* |
+| 4 | 0.51 | 0.89 | 0.97 |
+| 16 | 0.38 | 0.66 | 0.75 |
+| 32 | 0.31 | 0.46 | 0.50 |
+
+\* Inflado por el Ts más alto de esa corrida (pregunta 1).
+
+En la gráfica de eficiencia la curva de `static` **cae de golpe desde p = 2** y se queda muy por debajo de las otras dos en todo el rango; `dynamic` y `guided` se mantienen cerca de 0.9–1.0 con pocos hilos y bajan poco a poco, igual que en la Parte 1 con fp = 1.00 (núcleos E, HT y turbo).
+
+**4. Si `dynamic` gana aquí, ¿por qué no usarlo siempre?**
+
+Porque repartir en tiempo de ejecución no es gratis. Con `dynamic,64`, cada vez que un hilo se desocupa tiene que **pedir el siguiente bloque a un contador compartido** (una operación atómica sobre una línea de caché que salta de núcleo en núcleo). Aquí son W/64 = 625 pedidos, y cada bloque de 64 iteraciones trae ≈ 49 ms / 625 ≈ **79 µs de trabajo**, así que el costo de pedirlo (del orden de cientos de ns) no se nota: con p = 1, `dynamic` tarda 49.06 ms frente a 49.13 ms sin OpenMP.
+
+En la Parte 2 vimos el caso contrario. Solo abrir una región paralela cuesta **≈ 3–30 µs** (P5 y P6 de la Parte 2), y un bloque de 64 números de la suma son ≈ 32 ns de trabajo (0.5 ns por suma): con `dynamic` el hilo gastaría mucho más en pedir el bloque que en sumarlo, encima del overhead de la región. Otros costos de `dynamic`:
+
+- **Peor localidad:** cada hilo recibe pedazos dispersos del arreglo, en lugar de un bloque contiguo que el prefetcher y la caché aprovechan.
+- **Cola al final:** el último bloque es el más caro (64 iteraciones de ≈ 2 µs ≈ 130 µs, el 4 % de Tp con p = 32) y nadie puede ayudar con él.
+- **Reparto no determinista:** cambia de una corrida a otra.
+
+`static` no tiene ninguno de esos costos: el reparto se calcula una vez, sin sincronización. **Si las iteraciones cuestan lo mismo, `static` es lo mejor**; `dynamic` solo vale la pena cuando el desbalance cuesta más que repartir. `guided` es el término medio: bloques grandes al principio (pocos pedidos) y chicos al final (para emparejar), y por eso empata o le gana un poco a `dynamic` con la mayoría de p (Tp con p = 16: 4.55 ms frente a 4.66 ms).
+
+**5. Núcleos P y E: `static` desbalanceado aunque todas las iteraciones cuesten lo mismo**
+
+`static` reparte **la misma cantidad de iteraciones**, no la misma cantidad de tiempo. En esta laptop los hilos no son iguales: un núcleo E corre a 4.0 GHz (frente a 5.6 GHz de un P) con una microarquitectura más simple, y desde p = 25 dos hilos comparten un núcleo P por Hyper-Threading y cada uno va más o menos a la mitad. Los hilos rápidos terminan y esperan en la barrera al más lento, igual que en la pregunta 3: es desbalance en tiempo aunque no lo haya en iteraciones.
+
+Se ve en los datos:
+
+- **Parte 1, fp = 1.00** (iteraciones idénticas, `static`): S cae de **16.28 con p = 24 a 12.81 con p = 25** (Tp 27 % más lento con un hilo más), justo cuando empieza el HT (Parte 1, P1).
+- **Aquí, `guided`:** cae de 16.96 (p = 24) a **13.18 (p = 25)**. Sus primeros bloques son grandes, y si uno de ellos le toca a un hilo HT, todos lo esperan.
+- **Aquí, `dynamic`:** apenas baja de 15.06 a 14.39, porque con bloques de 64 el hilo lento simplemente toma menos bloques. El reparto dinámico también compensa hilos de distinta velocidad.
+- **Aquí, `static`:** de p = 25 a 32 el speedup sube y baja sin orden (9.05, 9.96, 9.81, 9.60, 9.35, 10.70, 9.65, 9.83): depende de en qué núcleo caiga el bloque más caro.
+
+En una CPU así, `static` solo queda bien balanceado si se fijan los hilos a núcleos iguales (por ejemplo `OMP_PLACES=cores` y `OMP_PROC_BIND=close` con p ≤ 8, solo núcleos P) o si se usa un reparto dinámico.
 
 ---
 
