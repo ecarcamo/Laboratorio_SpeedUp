@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Informe Lab 12 — Speedup</title>
+<style>
+@page { size: letter; margin: 2.54cm; @top-right { content: counter(page); font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: #000; } }
+* { color: #000; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.15; margin: 0; text-align: justify; hyphens: auto; }
+h1, h2, h3 { font-size: 12pt; font-weight: bold; margin: 12pt 0 4pt; break-after: avoid; text-align: left; }
+h1 { text-align: center; margin-top: 14pt; }
+h3 { font-style: italic; }
+p { margin: 0 0 5pt; text-indent: 1.27cm; }
+p.sin { text-indent: 0; }
+ol, ul { margin: 0 0 5pt; padding-left: 1.27cm; }
+li { margin-bottom: 3pt; }
+code { font-family: inherit; font-size: inherit; }
+.eq { text-align: center; text-indent: 0; margin: 4pt 0 6pt; }
+/* Tablas y figuras con formato APA */
+.tabla, .figura { margin: 8pt 0 8pt; break-inside: avoid; }
+.num { font-weight: bold; text-indent: 0; margin: 0; }
+.tit { font-style: italic; text-indent: 0; margin: 0 0 3pt; }
+.nota { font-size: 10pt; text-indent: 0; margin: 3pt 0 0; text-align: left; }
+table { border-collapse: collapse; width: 100%; font-size: 10pt; line-height: 1.1; }
+th, td { padding: 2pt 4pt; text-align: center; vertical-align: top; }
+th { font-weight: normal; border-bottom: 1px solid #000; }
+thead tr:first-child th { border-top: 1.5px solid #000; }
+tbody tr:last-child td { border-bottom: 1.5px solid #000; }
+td.izq, th.izq { text-align: left; }
+.imgs { display: flex; gap: 10pt; justify-content: center; }
+.imgs img { width: 48%; }
+.imgs img.sola { width: 62%; }
+/* Carátula */
+.caratula { height: 21.8cm; display: flex; flex-direction: column; align-items: center; text-align: center; break-after: page; }
+.caratula img { width: 4.2cm; margin-top: 0.5cm; }
+.caratula p { text-indent: 0; text-align: center; margin: 0; }
+.caratula .titulo { font-weight: bold; font-size: 12pt; margin-top: 2.2cm; }
+.caratula .bloque { margin-top: 2cm; line-height: 1.6; }
+.caratula .fecha { margin-top: auto; }
+.refs p { text-indent: -1.27cm; padding-left: 1.27cm; text-align: left; }
+.nueva { break-before: page; }
+</style>
+</head>
+<body>
+
+<section class="caratula">
+  <img src="uvg_logo.png" alt="Logo de la Universidad del Valle de Guatemala">
+  <p class="bloque">Universidad del Valle de Guatemala<br>Facultad de Ingeniería<br>Departamento de Ciencias de la Computación<br>CC3069 Computación Paralela y Distribuida</p>
+  <p class="titulo">Laboratorio 12: ¿Por qué 8 núcleos no son 8 veces más rápido?<br>Speedup, eficiencia, Amdahl y Gustafson</p>
+  <p class="bloque">Nicolás Concuá, 23197<br>Esteban Cárcamo, 23016</p>
+  <p class="fecha">Guatemala, 6 de octubre de 2026</p>
+</section>
+
+<h1>Introducción</h1>
+<p>En este laboratorio se midió cuánto más rápido corre un programa en C con OpenMP al agregar hilos, y por qué casi nunca llega a ser <i>p</i> veces más rápido (Universidad del Valle de Guatemala, 2026). Se usaron las métricas de clase: speedup <i>S</i> = <i>T<sub>s</sub></i> / <i>T<sub>p</sub></i>, eficiencia <i>E</i> = <i>S</i> / <i>p</i>, costo <i>C</i> = <i>p</i>·<i>T<sub>p</sub></i> y efectividad <i>F</i> = <i>S</i> / <i>C</i> (Pacheco &amp; Malensek, 2022). Se compararon dos modelos: el de problema fijo (Amdahl, 1967) y el de problema que crece con los núcleos (Gustafson, 1988). Cada medición se repitió cinco veces y se reporta la mediana. Antes de cada experimento se escribió una predicción, que luego se contrasta con lo medido.</p>
+
+<h2>Equipo utilizado</h2>
+<p>Todas las corridas se hicieron en la misma laptop, conectada a la corriente (Tabla 1). Lo más importante del equipo es que sus 32 hilos no son iguales: 16 son hilos de núcleos de rendimiento (P) que comparten núcleo de dos en dos por Hyper-Threading (HT) y 16 son núcleos de eficiencia (E), más lentos. Con un solo hilo, un núcleo P llega a 5.6 GHz por el turbo.</p>
+<div class="tabla">
+<p class="num">Tabla 1</p><p class="tit">Datos del equipo</p>
+<table><thead><tr><th class="izq">Dato</th><th class="izq">Valor</th></tr></thead><tbody>
+<tr><td class="izq">CPU</td><td class="izq">Intel Core i9-13980HX (Raptor Lake, x86_64)</td></tr>
+<tr><td class="izq">Núcleos e hilos</td><td class="izq">24 físicos, 32 lógicos (<i>p</i><sub>max</sub> = 32)</td></tr>
+<tr><td class="izq">Núcleos P</td><td class="izq">8 con HT (CPU 0–15), hasta 5.4–5.6 GHz</td></tr>
+<tr><td class="izq">Núcleos E</td><td class="izq">16 sin HT (CPU 16–31), hasta 4.0 GHz</td></tr>
+<tr><td class="izq">Caché</td><td class="izq">L1d 48 KiB (P) / 32 KiB (E) por núcleo; L2 2 MiB por núcleo P y 4 MiB por grupo de 4 E; L3 36 MiB compartida</td></tr>
+<tr><td class="izq">Sistema y compilador</td><td class="izq">Linux 7.2.6 (CachyOS), gobernador powersave; GCC 16.2.1 con -O2 -fopenmp</td></tr>
+</tbody></table>
+<p class="nota"><i>Nota.</i> Obtenido con lscpu y lscpu -e (ver evidencia).</p>
+</div>
+
+<h2>Predicciones</h2>
+<p>La Tabla 2 resume lo que se predijo antes de correr cada experimento y lo que se midió. Cada diferencia se explica en su parte.</p>
+<div class="tabla">
+<p class="num">Tabla 2</p><p class="tit">Predicciones escritas antes de medir y resultado obtenido</p>
+<table><thead><tr><th class="izq">Parte</th><th class="izq">Pregunta</th><th class="izq">Predicción</th><th class="izq">Medido</th></tr></thead><tbody>
+<tr><td class="izq">1</td><td class="izq"><i>S</i>(32) con <i>f<sub>p</sub></i> = 1.00</td><td class="izq">≈ 16: con static manda el hilo más lento (núcleo E o HT)</td><td class="izq">15.28 (máximo 16.28 con <i>p</i> = 24)</td></tr>
+<tr><td class="izq">1</td><td class="izq"><i>S</i>(32) con <i>f<sub>p</sub></i> = 0.90</td><td class="izq">≈ 6–7 (techo del modelo: 7.8)</td><td class="izq">5.91</td></tr>
+<tr><td class="izq">2a</td><td class="izq">OpenMP con 1 hilo frente a secuencial</td><td class="izq">1–5 % más lento</td><td class="izq">0.48 % más rápido (ruido)</td></tr>
+<tr><td class="izq">2b</td><td class="izq"><i>N</i> desde el que conviene paralelizar</td><td class="izq"><i>N</i> ≈ 65 536</td><td class="izq">Se cumple: <i>S</i> = 3.0 con <i>p</i> = 4</td></tr>
+<tr><td class="izq">3</td><td class="izq">static, <i>p</i> = 4: trabajo del último hilo y <i>S</i></td><td class="izq">7/16 ≈ 43.8 %, <i>S</i> ≈ 2.29</td><td class="izq"><i>S</i> = 2.03</td></tr>
+<tr><td class="izq">4</td><td class="izq"><i>S</i> máximo con <i>f<sub>p</sub></i> = 0.83 según la Parte 1</td><td class="izq">5.9 (5.1 con <i>p</i> = 32), pero aquí <i>S</i> crecerá casi lineal</td><td class="izq"><i>S</i>(32) = 15.13</td></tr>
+</tbody></table>
+</div>
+
+<h1>Parte 1: la parte que no se puede repartir</h1>
+<p>Se corrió <code>./lab12 amdahl 400000 f<sub>p</sub></code> con <i>f<sub>p</sub></i> = 1.00, 0.95, 0.90, 0.75 y 0.50 (Tabla 3 y Figura 1).</p>
+<div class="tabla">
+<p class="num">Tabla 3</p><p class="tit">Speedup, eficiencia y valores óptimos de p para cada fracción paralelizable</p>
+<table><thead><tr><th><i>f<sub>p</sub></i></th><th><i>S</i> (<i>p</i> = 2)</th><th><i>S</i> (<i>p</i> = 4)</th><th><i>S</i> (<i>p</i> = 32)</th><th><i>E</i> (<i>p</i> = 32)</th><th><i>p</i> con <i>F</i> máxima</th><th><i>p</i> con <i>T<sub>p</sub></i> mínimo</th></tr></thead><tbody>
+<tr><td>1.00</td><td>1.95</td><td>3.77</td><td>15.28</td><td>0.477</td><td>23</td><td>24</td></tr>
+<tr><td>0.95</td><td>1.90</td><td>3.31</td><td>8.38</td><td>0.262</td><td>23</td><td>23</td></tr>
+<tr><td>0.90</td><td>1.80</td><td>2.74</td><td>5.91</td><td>0.185</td><td>8</td><td>22</td></tr>
+<tr><td>0.75</td><td>1.55</td><td>2.21</td><td>3.30</td><td>0.103</td><td>3</td><td>22</td></tr>
+<tr><td>0.50</td><td>1.40</td><td>1.63</td><td>1.84</td><td>0.058</td><td>1</td><td>22</td></tr>
+</tbody></table>
+</div>
+<p><b>Cálculo a mano.</b> Para <i>f<sub>p</sub></i> = 1.00 y <i>p</i> = 4 (<i>T<sub>s</sub></i> = 0.504553 s, <i>T<sub>p</sub></i> = 0.133820 s): <i>S</i> = 0.504553 / 0.133820 = 3.770; <i>E</i> = 3.770 / 4 = 0.943; <i>C</i> = 4 × 0.133820 = 0.535 s; <i>F</i> = 3.770 / 0.535 = 7.04 s<sup>−1</sup>. Para <i>f<sub>p</sub></i> = 0.90 y <i>p</i> = 32 (<i>T<sub>s</sub></i> = 0.501464 s, <i>T<sub>p</sub></i> = 0.084802 s): <i>S</i> = 5.913; <i>E</i> = 0.185; <i>C</i> = 2.714 s; <i>F</i> = 2.18 s<sup>−1</sup>. Ambos coinciden con los CSV generados por el script.</p>
+
+<div class="figura">
+<p class="num">Figura 1</p><p class="tit">Speedup (izquierda) y eficiencia (derecha) del modo amdahl</p>
+<div class="imgs"><img src="../../figures/amdahl_speedup.png" alt="Speedup amdahl"><img src="../../figures/amdahl_eficiencia.png" alt="Eficiencia amdahl"></div>
+</div>
+
+<p><b>Predicción frente a lo medido.</b> Con <i>f<sub>p</sub></i> = 1.00 se acertó el orden (≈ 16 frente a 15.28), aunque el máximo real está en <i>p</i> = 24. Con <i>f<sub>p</sub></i> = 0.90 se midió un poco menos de lo previsto (5.91 frente a 6–7), porque la parte paralela pierde lo mismo que con <i>f<sub>p</sub></i> = 1.00 y además la parte secuencial se vuelve más lenta con muchos hilos.</p>
+<ol>
+<li><b>¿Se llegó a <i>S</i> = <i>p</i> con <i>f<sub>p</sub></i> = 1.00?</b> No: <i>S</i>(32) = 15.28 y el mejor valor fue 16.28 con <i>p</i> = 24. Las causas son, en orden de peso: el Hyper-Threading (al pasar de 24 a 25 hilos <i>T<sub>p</sub></i> sube 27 % y <i>E</i> cae de 0.68 a 0.51), los núcleos E (<i>E</i> ≈ 0.80 hasta <i>p</i> = 8 y ≈ 0.70 entre 9 y 24), el turbo (<i>T<sub>s</sub></i> corre a 5.6 GHz con un hilo) y, con poco peso, crear y sincronizar hilos (η<sub>c</sub>). Solo la última es una de las cuatro fugas.</li>
+<li><b>Forma de la curva con <i>f<sub>p</sub></i> = 0.75.</b> Es cóncava y se aplana hacia la asíntota 1/(1 − 0.75) = 4. El hilo 2 aportó +0.571 de speedup y el hilo 8 solo +0.110, cinco veces menos: cada hilo nuevo solo achica la parte paralela.</li>
+<li><b>Modelo de problema fijo.</b> Si (1 − <i>f<sub>p</sub></i>)·<i>T</i><sub>1</sub> no se reparte y <i>f<sub>p</sub></i>·<i>T</i><sub>1</sub> se divide entre <i>p</i> hilos:
+<p class="eq"><i>T<sub>p</sub></i> = (1 − <i>f<sub>p</sub></i>)·<i>T</i><sub>1</sub> + <i>f<sub>p</sub></i>·<i>T</i><sub>1</sub> / <i>p</i> &nbsp;⇒&nbsp; <i>S</i>(<i>p</i>) = 1 / [(1 − <i>f<sub>p</sub></i>) + <i>f<sub>p</sub></i> / <i>p</i>]</p></li>
+<li><b>Predicción con <i>f<sub>p</sub></i> = 0.90 y <i>p</i> = 32.</b> <i>S</i> = 1 / (0.10 + 0.028125) = 7.80. Se midió 5.91, el 76 % del modelo; la diferencia es lo que el modelo no ve (pregunta 1).</li>
+<li><b>Límite cuando <i>p</i> → ∞.</b> <i>S</i>(∞) = 1/(1 − <i>f<sub>p</sub></i>) = 10. Con 1000 núcleos, <i>S</i> = 9.91: nunca se baja del 10 % secuencial.</li>
+<li><b>Despejar <i>f<sub>p</sub></i> de lo medido.</b> <i>f<sub>p</sub></i> = (1 − 1/<i>S</i>) / (1 − 1/<i>p</i>) = 0.83088 / 0.96875 = 0.858, menor que 0.90. Para los demás casos sale 0.965, 0.909, 0.858, 0.720 y 0.472: hasta con <i>f<sub>p</sub></i> = 1.00 aparece un 3.5 % «secuencial». Es overhead (η<sub>c</sub>), desbalance por hardware y que la parte secuencial empeora 6 % con 32 hilos (de 0.0524 a 0.0555 s), probablemente por calentamiento y pérdida de turbo.</li>
+<li><b>Efectividad con <i>f<sub>p</sub></i> = 0.90.</b> <i>F</i> es máxima con <i>p</i> = 8 (<i>F</i> = 4.26 s<sup>−1</sup>, <i>S</i> = 4.13), pero el menor tiempo se logra con <i>p</i> = 22 (<i>T<sub>p</sub></i> = 0.0806 s). No es el mismo <i>p</i>: pasar de 8 a 22 hilos baja el tiempo 34 % con 2.75 veces más hilos. El modelo da el óptimo de <i>F</i> en <i>p</i> = <i>f<sub>p</sub></i>/(1 − <i>f<sub>p</sub></i>) = 9.</li>
+<li><b>El jefe y el servidor de 64 núcleos.</b> Con 2 s de lectura sobre 20 s, <i>f<sub>p</sub></i> = 0.90 y <i>T<sub>p</sub></i> = 2 + 18/<i>p</i>. Con 64 núcleos se bajaría a 2.28 s (<i>S</i> = 8.77, <i>E</i> = 0.14), mientras que con 9 núcleos ya se tiene <i>S</i> = 5.0 con la efectividad máxima (0.139). La respuesta: el servidor no vale la pena; nunca se bajará de 2 s mientras la lectura sea secuencial, así que conviene atacar esa lectura primero. Además, el hardware real rinde menos que el modelo (5.9 en lugar de 7.8 con 32 hilos).</li>
+</ol>
+
+<h1>Parte 2: ¿vale la pena paralelizar algo pequeño?</h1>
+<h2>El <i>T<sub>s</sub></i> honesto</h2>
+<p>Se predijo que OpenMP con 1 hilo sería 1–5 % más lento que la versión secuencial; resultó 0.48 % más rápido (0.502151 s frente a 0.504553 s). El overhead de una región paralela es de microsegundos y el trabajo dura medio segundo, así que la diferencia queda dentro del ruido.</p>
+<ol>
+<li><b>¿Cuál es más rápido?</b> En las cinco corridas de amdahl la diferencia va de −2.5 % a +0.9 %: con trabajos grandes son iguales. Con trabajos chicos no: con <i>N</i> = 1024 OpenMP con 1 hilo tarda 551 ns frente a 380 ns (45 % más lento).</li>
+<li><b>Usar el programa paralelo con 1 hilo como <i>T<sub>s</sub></i></b> infla el speedup, porque esa versión paga el overhead de OpenMP sin ganar nada. Con <i>N</i> = 1024 inflaría todos los speedups un 45 %. Lo honesto es comparar contra el mejor programa secuencial.</li>
+</ol>
+<h2>Sumar <i>N</i> números</h2>
+<div class="tabla">
+<p class="num">Tabla 4</p><p class="tit">Speedup de la suma según N y p</p>
+<table><thead><tr><th><i>N</i></th><th><i>T<sub>s</sub></i></th><th><i>p</i> = 1</th><th><i>p</i> = 2</th><th><i>p</i> = 4</th><th><i>p</i> = 8</th><th><i>p</i> = 16</th><th><i>p</i> = 32</th></tr></thead><tbody>
+<tr><td>16</td><td>≈ 2 ns</td><td>0.013</td><td>0.0006</td><td>0.0004</td><td>0.0003</td><td>0.0002</td><td>0.0001</td></tr>
+<tr><td>1 024</td><td>380 ns</td><td>0.69</td><td>0.12</td><td>0.08</td><td>0.05</td><td>0.03</td><td>0.01</td></tr>
+<tr><td>65 536</td><td>33.7 µs</td><td>1.18</td><td>1.80</td><td>3.01</td><td>1.89</td><td>1.90</td><td>1.06</td></tr>
+<tr><td>1 048 576</td><td>494 µs</td><td>1.02</td><td>1.90</td><td>2.31</td><td>3.65</td><td>5.56</td><td>4.80</td></tr>
+<tr><td>16 777 216</td><td>9.02 ms</td><td>1.01</td><td>1.85</td><td>2.40</td><td>2.26</td><td>2.29</td><td>2.34</td></tr>
+</tbody></table>
+<p class="nota"><i>Nota.</i> Los tiempos tienen resolución de 1 ns, así que el <i>T<sub>s</sub></i> de <i>N</i> = 16 tiene un error de hasta ±25 %.</p>
+</div>
+<div class="figura">
+<p class="num">Figura 2</p><p class="tit">Speedup de la suma según el tamaño del problema</p>
+<div class="imgs"><img class="sola" src="../../figures/suma_speedup.png" alt="Speedup de la suma"></div>
+</div>
+<p>La predicción se cumplió: con <i>N</i> = 1024 lo paralelo pierde con cualquier <i>p</i> y con 65 536 ya gana. Lo que no se previó es que con <i>N</i> = 65 536 usar 32 hilos casi empata con la versión secuencial (<i>S</i> = 1.06).</p>
+<ol start="3">
+<li><b><i>N</i> = 16 y <i>p</i> = 32.</b> <i>S</i> ≈ 0.0001: la versión paralela es unas 15 000 veces más lenta (30 µs frente a 2 ns).</li>
+<li><b>Modelo de dos fases de clase.</b> Cuenta solo sumas (con <i>p</i> = 4, 5 sumas) y supone que pasar resultados y sincronizar es gratis. En la máquina una suma cuesta ≈ 0.1–0.2 ns y sincronizar ≈ 5 µs, decenas de miles de sumas. La fuga es η<sub>c</sub>.</li>
+<li><b>Lo que hace OpenMP además de sumar:</b> despertar o crear los hilos, calcular el bloque de cada uno, crear e inicializar las copias privadas del reduction, traer los datos a la caché de cada núcleo, combinar los parciales, esperar en la barrera implícita y devolver los hilos a espera. Ese overhead crece con <i>p</i>: 3.6 µs (<i>p</i> = 2), 5.3 µs (4), 7.8 µs (8), 12.5 µs (16) y 30 µs (32).</li>
+<li><b>¿Desde qué <i>N</i> conviene?</b> Sumar un número cuesta ≈ 0.5 ns, así que paralelizar ahorra <i>N</i>·0.5 ns·(1 − 1/<i>p</i>). Igualándolo al overhead, conviene desde <i>N</i> ≈ 14 000 con 2 a 4 hilos y desde <i>N</i> ≈ 62 000 con 32. Regla práctica: la región paralela debe tener al menos decenas de microsegundos de trabajo.</li>
+<li><b>Con <i>N</i> grande, ¿llega <i>S</i> a <i>p</i>?</b> No. Con <i>N</i> = 16.7 M (128 MiB, no cabe en la L3) <i>S</i> se estanca en ≈ 2.3–2.4 desde <i>p</i> = 4. El límite es el ancho de banda de la RAM, compartido por todos los núcleos: 14.9 GB/s en secuencial y 35.8 GB/s con <i>p</i> = 4, el techo práctico. Con <i>N</i> = 1 M (8 MiB, cabe en caché) se llega a 5.56. No encaja limpiamente en las cuatro fugas: es competencia por un recurso de hardware.</li>
+</ol>
+
+<h1>Parte 3: cuando a un hilo le toca más trabajo</h1>
+<p>En el modo desbalance la iteración <i>i</i> cuesta 1 + 2000·<i>i</i>/<i>W</i> unidades (<i>W</i> = 40 000): el costo crece en línea recta. Se compararon los schedules static, dynamic (bloques de 64) y guided (OpenMP Architecture Review Board, 2021), como se ve en la Tabla 5 y la Figura 3.</p>
+<div class="tabla">
+<p class="num">Tabla 5</p><p class="tit">Speedup y eficiencia del modo desbalance por schedule</p>
+<table><thead><tr><th class="izq">Schedule</th><th><i>T<sub>s</sub></i> (ms)</th><th><i>S</i> (2)</th><th><i>S</i> (4)</th><th><i>S</i> (8)</th><th><i>S</i> (16)</th><th><i>S</i> (24)</th><th><i>S</i> (32)</th><th><i>T<sub>p</sub></i> (32, ms)</th><th><i>E</i> (32)</th></tr></thead><tbody>
+<tr><td class="izq">static</td><td>49.24</td><td>1.31</td><td>2.03</td><td>3.49</td><td>6.05</td><td>8.96</td><td>9.83</td><td>5.01</td><td>0.31</td></tr>
+<tr><td class="izq">dynamic</td><td>49.13</td><td>1.91</td><td>3.55</td><td>5.94</td><td>10.54</td><td>15.06</td><td>14.72</td><td>3.34</td><td>0.46</td></tr>
+<tr><td class="izq">guided</td><td>54.88</td><td>2.17</td><td>3.88</td><td>6.92</td><td>12.07</td><td>16.96</td><td>16.06</td><td>3.42</td><td>0.50</td></tr>
+</tbody></table>
+<p class="nota"><i>Nota.</i> Entre paréntesis, el número de hilos <i>p</i>. Cada corrida mide su propio <i>T<sub>s</sub></i>.</p>
+</div>
+<div class="figura">
+<p class="num">Figura 3</p><p class="tit">Speedup (izquierda) y eficiencia (derecha) por schedule</p>
+<div class="imgs"><img src="../../figures/desbalance_speedup.png" alt="Speedup desbalance"><img src="../../figures/desbalance_eficiencia.png" alt="Eficiencia desbalance"></div>
+</div>
+<p><b>Predicción frente a lo medido.</b> Se predijo <i>S</i> ≈ 2.29 con static y <i>p</i> = 4, y se midió 2.03 (89 %). La cuenta supone que los 4 hilos van tan rápido como el <i>T<sub>s</sub></i> de un hilo, pero con 4 núcleos activos se pierde turbo: en la Parte 1, sin desbalance, <i>E</i>(4) = 0.943. Corrigiendo, 2.29 × 0.943 ≈ 2.16; el 6 % restante es ruido y la ubicación del hilo más cargado. Con <i>p</i> = 2 se predijo 1.33 y se midió 1.31.</p>
+<ol>
+<li><b>Comparación de <i>S</i>(32).</b> Gana guided (16.06): 63 % más que static (1.63 veces) y 9 % más que dynamic (14.72). Sin embargo, la corrida de guided midió un <i>T<sub>s</sub></i> 11 % mayor, lo que infla su speedup. Comparando tiempos, dynamic (3.34 ms) y guided (3.42 ms) empatan y ambos son 1.5 veces más rápidos que static (5.01 ms).</li>
+<li><b>Fracción del hilo más cargado con static.</b> Con el rango normalizado a [0, 1] y costo <i>c</i>(<i>x</i>) = <i>x</i>, el trabajo de un bloque [<i>a</i>, <i>b</i>] es el área del trapecio, (<i>b</i> − <i>a</i>)·(<i>a</i> + <i>b</i>)/2, y el total es 1/2. El último bloque, [(<i>p</i> − 1)/<i>p</i>, 1], tiene la fracción 1 − ((<i>p</i> − 1)/<i>p</i>)² = (2<i>p</i> − 1)/<i>p</i>², y <i>S</i> ≈ <i>p</i>²/(2<i>p</i> − 1).
+<ul>
+<li><i>p</i> = 2: área (1/2)·(3/4) = 3/8; fracción 3/4 = 75 %; <i>S</i> ≈ 1.33. Medido: 1.31.</li>
+<li><i>p</i> = 4: área (1/4)·(7/8) = 7/32; fracción 7/16 = 43.75 %; <i>S</i> ≈ 2.29. Medido: 2.03. El último hilo trabaja 7 veces más que el primero (1/16).</li>
+</ul>
+Con <i>p</i> = 32 la fórmula da 16.25 y se midió 9.83: el bloque más caro puede caer en un núcleo E o en un hilo HT.</li>
+<li><b>¿Qué hacen los primeros hilos?</b> Terminan su bloque barato y esperan en la barrera implícita del parallel for. Con <i>p</i> = 4 el hilo 0 pasa ≈ 86 % de la región esperando. La eficiencia ideal de static es <i>p</i>/(2<i>p</i> − 1), que tiende a 0.5. En la Figura 3 la curva de static cae de golpe desde <i>p</i> = 2 (0.65 y 0.51 con <i>p</i> = 4) y queda muy por debajo de dynamic (0.89) y guided (0.97).</li>
+<li><b>¿Por qué no usar siempre dynamic?</b> Cada bloque se pide en tiempo de ejecución a un contador compartido, con sincronización entre hilos. Aquí son 625 pedidos y cada bloque trae ≈ 79 µs de trabajo, así que el costo no se nota. Pero en la Parte 2 abrir una región ya costaba 3–30 µs, y un bloque de 64 sumas son ≈ 32 ns: pedir el bloque costaría más que hacerlo. Además, dynamic pierde localidad de caché y el último bloque (el más caro) no se puede repartir. Si las iteraciones cuestan lo mismo, static es lo mejor; guided es un término medio con menos pedidos.</li>
+<li><b>Núcleos P y E.</b> static reparte el mismo número de iteraciones, no el mismo tiempo. Los hilos en núcleos E (4.0 GHz) o que comparten núcleo por HT tardan más y los demás los esperan. En la Parte 1 (iteraciones idénticas) <i>S</i> cae de 16.28 a 12.81 al pasar de 24 a 25 hilos; aquí guided cae de 16.96 a 13.18 y dynamic, con bloques pequeños, apenas baja de 15.06 a 14.39.</li>
+</ol>
+
+<h1>Parte 4: ¿y si el problema crece con los núcleos?</h1>
+<p>El modo gustafson mantiene la parte secuencial en 20 000 unidades y da 100 000 unidades paralelas a cada hilo: el problema es 20 000 + 100 000·<i>p</i> (Figura 4).</p>
+<div class="figura">
+<p class="num">Figura 4</p><p class="tit">Speedup (izquierda) y eficiencia (derecha) del modo gustafson</p>
+<div class="imgs"><img src="../../figures/gustafson_speedup.png" alt="Speedup gustafson"><img src="../../figures/gustafson_eficiencia.png" alt="Eficiencia gustafson"></div>
+</div>
+<p><b>Predicción frente a lo medido.</b> Con el modelo de la Parte 1 y <i>f<sub>p</sub></i> = 0.83, el máximo es 5.9 (5.1 con <i>p</i> = 32), y se predijo que aquí no pasaría. Se acertó: <i>S</i>(32) = 15.13, casi tres veces más, y <i>S</i> crece ≈ 0.63·<i>p</i> hasta <i>p</i> = 24 sin acercarse a ningún techo.</p>
+<ol>
+<li><b>t_seq y t_par.</b> t_seq crece casi en línea recta, de 0.160 s a 3.937 s (≈ 0.122 s por hilo), porque es el problema completo en un núcleo. t_par casi no se mueve (0.157 s con <i>p</i> = 1 y 0.197 s con <i>p</i> = 24) porque cada hilo siempre tiene 100 000 unidades; sube por los núcleos E y salta a ≈ 0.25 s con el HT.</li>
+<li><b><i>S</i>(32) frente a la Parte 1.</b> El modelo da 1 / (0.17 + 0.83/32) = 5.10 y se midió 15.13. El código es el mismo, pero 0.83 es la fracción del problema de <i>p</i> = 1. Para el problema de <i>p</i> = 32, <i>f<sub>p</sub></i> = 3 200 000 / 3 220 000 = 0.9938 y el mismo modelo da 26.8: la parte secuencial pasa del 17 % al 0.6 % del trabajo.</li>
+<li><b>s = t_parte_seq / t_par</b> (Tabla 6). No se mantiene: baja de 0.174 a ≈ 0.13 (<i>p</i> = 16–24) y a ≈ 0.10 (<i>p</i> ≥ 25). La parte secuencial se queda en 0.026 s; lo que crece es t_par, en dos escalones que coinciden con los núcleos E y con el HT. En hardware homogéneo s quedaría en ≈ 1/6.</li>
+</ol>
+<div class="tabla">
+<p class="num">Tabla 6</p><p class="tit">Fracción secuencial s y speedup medido para cada p</p>
+<table><thead><tr><th><i>p</i></th><th>s</th><th><i>S</i></th><th><i>p</i></th><th>s</th><th><i>S</i></th><th><i>p</i></th><th>s</th><th><i>S</i></th><th><i>p</i></th><th>s</th><th><i>S</i></th></tr></thead><tbody>
+<tr><td>1</td><td>0.174</td><td>1.02</td><td>9</td><td>0.139</td><td>5.97</td><td>17</td><td>0.135</td><td>10.85</td><td>25</td><td>0.104</td><td>12.41</td></tr>
+<tr><td>2</td><td>0.174</td><td>1.81</td><td>10</td><td>0.133</td><td>6.50</td><td>18</td><td>0.131</td><td>11.50</td><td>26</td><td>0.142</td><td>15.71</td></tr>
+<tr><td>3</td><td>0.171</td><td>2.56</td><td>11</td><td>0.137</td><td>7.17</td><td>19</td><td>0.131</td><td>12.05</td><td>27</td><td>0.103</td><td>13.41</td></tr>
+<tr><td>4</td><td>0.155</td><td>3.15</td><td>12</td><td>0.140</td><td>7.64</td><td>20</td><td>0.135</td><td>12.72</td><td>28</td><td>0.100</td><td>13.49</td></tr>
+<tr><td>5</td><td>0.165</td><td>3.91</td><td>13</td><td>0.134</td><td>8.43</td><td>21</td><td>0.133</td><td>13.27</td><td>29</td><td>0.102</td><td>13.65</td></tr>
+<tr><td>6</td><td>0.159</td><td>4.45</td><td>14</td><td>0.136</td><td>9.01</td><td>22</td><td>0.133</td><td>13.90</td><td>30</td><td>0.101</td><td>14.41</td></tr>
+<tr><td>7</td><td>0.154</td><td>5.19</td><td>15</td><td>0.136</td><td>9.54</td><td>23</td><td>0.130</td><td>14.33</td><td>31</td><td>0.097</td><td>14.35</td></tr>
+<tr><td>8</td><td>0.149</td><td>5.81</td><td>16</td><td>0.131</td><td>10.14</td><td>24</td><td>0.131</td><td>15.02</td><td>32</td><td>0.101</td><td>15.13</td></tr>
+</tbody></table>
+</div>
+<ol start="4">
+<li><b>Segundo modelo.</b> Si una fracción s de <i>T<sub>p</sub></i> es secuencial y (1 − s)·<i>T<sub>p</sub></i> lo hacen <i>p</i> hilos, en un núcleo la parte paralela tardaría <i>p</i>·(1 − s)·<i>T<sub>p</sub></i>:
+<p class="eq"><i>T<sub>s</sub></i> = s·<i>T<sub>p</sub></i> + <i>p</i>·(1 − s)·<i>T<sub>p</sub></i> &nbsp;⇒&nbsp; <i>S</i> = s + <i>p</i>·(1 − s) = <i>p</i> − s·(<i>p</i> − 1)</p>
+Verificación con el s de cada fila: <i>p</i> = 2 da 1.83 (medido 1.81); <i>p</i> = 8 da 6.96 (5.81); <i>p</i> = 16 da 14.04 (10.14); <i>p</i> = 32 da 28.87 (15.13). Con <i>p</i> grande el modelo da más porque supone que cada hilo rinde como el núcleo P con turbo de <i>T<sub>s</sub></i>. Si se multiplica por la eficiencia de la Parte 1 con <i>f<sub>p</sub></i> = 1.00 (5.55, 9.98 y 13.79), queda a menos de 10 % de lo medido.</li>
+<li><b>¿Qué pregunta responde cada parte?</b> «¿Cuánto más rápido resuelvo el mismo problema?» corresponde a la Parte 1 (Amdahl, escalado fuerte); por ejemplo, renderizar un cuadro fijo o responder una consulta web con menor latencia. «¿Qué tan grande puedo hacer el problema en el mismo tiempo?» corresponde a la Parte 4 (Gustafson, escalado débil); por ejemplo, un pronóstico del clima con una malla más fina que debe estar listo a la misma hora, o entrenar un modelo con más datos en el mismo tiempo.</li>
+</ol>
+
+<h1>Síntesis</h1>
+<p>La Tabla 7 indica qué fuga explica la eficiencia perdida en cada parte. η<sub>r</sub> (trabajo repetido) casi no aparece: solo las <i>p</i> − 1 sumas extra del reduction (31 frente a 400 000 unidades en la Parte 1).</p>
+<div class="tabla">
+<p class="num">Tabla 7</p><p class="tit">Fuga principal de cada parte y número medido que la demuestra</p>
+<table><thead><tr><th class="izq">Parte</th><th class="izq">Fuga</th><th class="izq">Evidencia medida</th></tr></thead><tbody>
+<tr><td class="izq">1. Problema fijo</td><td class="izq">η<sub>f</sub> (fracción secuencial)</td><td class="izq">Con <i>f<sub>p</sub></i> = 0.90 el techo es 10 y se midió 5.91 con <i>p</i> = 32; <i>f<sub>p</sub></i> despejado = 0.858</td></tr>
+<tr><td class="izq">2. Suma de <i>N</i></td><td class="izq">η<sub>c</sub> (comunicación y sincronización)</td><td class="izq">Con <i>N</i> = 16 y <i>p</i> = 32 es ≈ 15 000 veces más lento (30 µs de overhead frente a 2 ns)</td></tr>
+<tr><td class="izq">3. Desbalance</td><td class="izq">η<sub>b</sub> (desbalance de carga)</td><td class="izq">static <i>S</i>(32) = 9.83 frente a 16.06 de guided, con el mismo trabajo total</td></tr>
+<tr><td class="izq">4. Problema que crece</td><td class="izq">η<sub>f</sub> casi desaparece</td><td class="izq">La parte secuencial baja del 17 % al 0.6 % del trabajo y <i>S</i>(32) = 15.13</td></tr>
+</tbody></table>
+</div>
+<p>Lo que no encaja en ninguna de las cuatro fugas viene del hardware, que el modelo supone homogéneo y sin recursos compartidos:</p>
+<ul>
+<li><b>Núcleos P/E e Hyper-Threading:</b> los hilos no rinden lo mismo; <i>S</i> cae de 16.28 a 12.81 al pasar de 24 a 25 hilos.</li>
+<li><b>Turbo:</b> <i>T<sub>s</sub></i> corre a 5.6 GHz con un hilo y la frecuencia baja con muchos núcleos activos; con <i>p</i> = 8 y sin parte secuencial, <i>E</i> = 0.80.</li>
+<li><b>Ancho de banda de memoria:</b> la suma con <i>N</i> = 16.7 M se estanca en <i>S</i> ≈ 2.4 (≈ 36 GB/s).</li>
+<li><b>Calentamiento:</b> la parte secuencial sube 6 % después de usar 32 hilos.</li>
+<li><b>Ruido entre corridas:</b> el <i>T<sub>s</sub></i> de guided salió 11 % mayor y dio <i>E</i> = 1.08 con <i>p</i> = 2.</li>
+</ul>
+
+<h1>Referencias</h1>
+<div class="refs">
+<p>Amdahl, G. M. (1967). Validity of the single processor approach to achieving large scale computing capabilities. En <i>Proceedings of the April 18–20, 1967, Spring Joint Computer Conference</i> (pp. 483–485). ACM. https://doi.org/10.1145/1465482.1465560</p>
+<p>Gustafson, J. L. (1988). Reevaluating Amdahl's law. <i>Communications of the ACM, 31</i>(5), 532–533. https://doi.org/10.1145/42411.42415</p>
+<p>OpenMP Architecture Review Board. (2021). <i>OpenMP application programming interface</i> (Versión 5.2). https://www.openmp.org/specifications/</p>
+<p>Pacheco, P. S., &amp; Malensek, M. (2022). <i>An introduction to parallel programming</i> (2.ª ed.). Morgan Kaufmann.</p>
+<p>Universidad del Valle de Guatemala. (2026). <i>Lab 12: ¿Por qué 8 núcleos no son 8× más rápido?</i> [Guía de laboratorio]. CC3069 Computación Paralela y Distribuida.</p>
+</div>
+
+</body>
+</html>
