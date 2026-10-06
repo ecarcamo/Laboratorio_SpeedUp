@@ -273,7 +273,33 @@ En cambio, con N = 1 048 576 (8 MiB, cabe en la L3 de 36 MiB, y con 16 hilos cad
 
 ## Parte 3 — Cuando a un hilo le toca más trabajo
 
-_(Pendiente — Nicolás.)_
+Comandos: `./lab12 desbalance {static,dynamic,guided}` → `results/raw/desb_{static,dynamic,guided}.csv`. Gráficas: `figures/desbalance_speedup.png` y `figures/desbalance_eficiencia.png`. Detalle de todas las filas en `results/derived/desbalance_con_S_E.csv`.
+
+La iteración i cuesta `1 + 2000·i/W` vueltas de `unidad`, con W = 40 000: el costo crece en línea recta desde casi 0 hasta el doble del promedio. Cada corrida mide su propio Ts (sin OpenMP) antes de probar los p.
+
+| schedule | Ts (ms) | S (p=2) | S (p=4) | S (p=8) | S (p=16) | S (p=24) | S (p=32) | Tp (p=32, ms) | E (p=32) |
+|---|---|---|---|---|---|---|---|---|---|
+| static | 49.24 | 1.31 | 2.03 | 3.49 | 6.05 | 8.96 | **9.83** | 5.01 | 0.307 |
+| dynamic | 49.13 | 1.91 | 3.55 | 5.94 | 10.54 | 15.06 | **14.72** | 3.34 | 0.460 |
+| guided | 54.88 | 2.17 | 3.88 | 6.92 | 12.07 | 16.96 | **16.06** | 3.42 | 0.502 |
+
+### Predicción frente a lo medido
+
+| Caso | Predicción | Medido | ¿Por qué la diferencia? |
+|---|---|---|---|
+| `static`, p = 4: trabajo del último hilo | 7/16 ≈ **43.8 %** del total | — | No se mide directo, pero se ve en Tp: 24.21 ms es el 49 % de Ts (el último hilo marca el tiempo). |
+| `static`, p = 4: speedup | 16/7 ≈ **2.29** | **2.03** | El 89 % de lo previsto. La cuenta supone que los 4 hilos van a la misma velocidad que el Ts de un solo hilo. Con 4 núcleos activos se pierde turbo: en la Parte 1 (fp = 1.00, sin desbalance) con p = 4 la eficiencia ya era 0.943. Corrigiendo con eso, 2.29 × 0.943 ≈ 2.16; el resto (≈ 6 %) es ruido y dónde coloca el sistema operativo al hilo más cargado. |
+| `static`, p = 2 (misma cuenta) | 4/3 ≈ **1.33** | **1.31** | Casi exacto: con 2 hilos los dos van en núcleos P y el turbo casi no baja (E = 0.975 en la Parte 1). |
+
+La predicción acertó el fenómeno: con `static` el speedup se queda muy por debajo de p aunque el trabajo total sea el mismo, y `dynamic`/`guided` lo arreglan casi por completo con pocos hilos (3.55 y 3.88 con p = 4).
+
+![Speedup de desbalance](../figures/desbalance_speedup.png)
+
+![Eficiencia de desbalance](../figures/desbalance_eficiencia.png)
+
+### Preguntas
+
+_(Pendiente.)_
 
 ---
 
