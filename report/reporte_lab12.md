@@ -451,9 +451,44 @@ En una máquina con núcleos iguales, s quedaría fija en ≈ 1/6 ≈ 0.167, la 
 
 Ojo con no confundir las dos fracciones: s es la fracción secuencial **del tiempo paralelo** (≈ constante en teoría) y 1 − fp es la fracción secuencial **del trabajo total en un núcleo** (baja de 0.17 a 0.006, pregunta 2).
 
-### Preguntas 4 y 5
+**4. El segundo modelo (problema que crece)**
 
-_(Pendiente.)_
+Partimos ahora de la ejecución **paralela**, que tarda Tp. Una fracción s de ese tiempo es la parte secuencial y el resto, (1 − s)·Tp, lo hacen los p hilos a la vez. ¿Cuánto tardaría ese mismo trabajo en un solo núcleo?
+
+- La parte secuencial tarda lo mismo: s·Tp.
+- La parte paralela son p pedazos de (1 − s)·Tp cada uno, hechos uno detrás de otro: p·(1 − s)·Tp.
+
+$$T_s = s\,T_p + p\,(1 - s)\,T_p$$
+
+$$S(p) = \frac{T_s}{T_p} = s + p\,(1 - s) = p - s\,(p - 1)$$
+
+Tp desaparece. Si s se mantiene fija, S crece **en línea recta con p**, con pendiente 1 − s: no hay techo como en la Parte 1.
+
+**Verificación con los datos** (s medido de cada fila; tabla completa en `results/derived/gustafson_s.md`):
+
+| p | s | S modelo = s + p(1 − s) | S medido | medido / modelo | E de la Parte 1 (fp = 1.00) | modelo × E Parte 1 |
+|---|---|---|---|---|---|---|
+| 2 | 0.174 | 0.174 + 2·0.826 = **1.83** | **1.81** | 0.99 | 0.977 | 1.78 |
+| 4 | 0.155 | 0.155 + 4·0.845 = **3.53** | **3.15** | 0.89 | 0.943 | 3.33 |
+| 8 | 0.149 | 0.149 + 8·0.851 = **6.96** | **5.81** | 0.84 | 0.798 | 5.55 |
+| 16 | 0.131 | 0.131 + 16·0.869 = **14.04** | **10.14** | 0.72 | 0.711 | 9.98 |
+| 32 | 0.101 | 0.101 + 32·0.899 = **28.87** | **15.13** | 0.52 | 0.477 | 13.79 |
+
+Con p = 2 el modelo acierta casi exacto (1 % de diferencia). Con p grande **el modelo da más que lo medido**, y la razón está en su hipótesis: supone que cada pedazo paralelo de (1 − s)·Tp tardaría lo mismo en el núcleo del Ts. No es así en esta laptop:
+
+- Ts corre con **un solo hilo en un núcleo P con turbo a 5.6 GHz**.
+- En Tp, los pedazos que caen en **núcleos E** (desde p = 9) o en **hilos HT** (desde p = 25) tardan más, y con `schedule(static)` todos esperan al más lento. Ese tiempo extra se cuenta en Tp como si fuera trabajo, así que p·(1 − s)·Tp **sobreestima** Ts.
+
+La columna «medido / modelo» cae justo en los mismos escalones que la Parte 1: ≈ 0.85 con núcleos P, ≈ 0.72 con núcleos E y ≈ 0.52 con HT. Si multiplicamos el modelo por la eficiencia de la Parte 1 con fp = 1.00 (mismo trabajo, sin parte secuencial, mismo p), que mide cuánto rinde un hilo frente al Ts, el modelo queda **a menos de 10 % de lo medido** en todas las filas.
+
+**5. ¿Qué pregunta responde cada experimento?**
+
+| Pregunta | Parte | Modelo / tipo de escalado | Ejemplo real |
+|---|---|---|---|
+| «¿Cuánto más rápido resuelvo **el mismo problema**?» | **Parte 1** | Amdahl, escalado **fuerte**: tamaño fijo, S tiene techo 1/(1 − fp) | **Renderizar un cuadro fijo** de una película o **responder una consulta web**: el tamaño del trabajo no cambia y lo que importa es bajar el tiempo (la latencia). Con la parte secuencial (cargar la escena, armar la respuesta) el beneficio se aplana pronto. |
+| «¿Qué tan **grande** puedo hacer el problema en el mismo tiempo?» | **Parte 4** | Gustafson, escalado **débil**: trabajo por núcleo fijo, S crece con p | **Pronóstico del clima**: el boletín sale a la misma hora, y con más núcleos se usa una **malla más fina** (más puntos) en lugar de terminar antes. Lo mismo al **entrenar un modelo** con más datos o más parámetros en el mismo presupuesto de horas. |
+
+Por eso los dos resultados no se contradicen: el mismo código tiene un techo de S ≈ 5.9 o llega a S = 15.1 según cuál de las dos preguntas se está haciendo. En la práctica, cuando una organización compra más núcleos casi siempre agranda el problema (escalado débil), y por eso las supercomputadoras siguen sirviendo aunque Amdahl diga que el speedup de un problema fijo tiene techo.
 
 ---
 
