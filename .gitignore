@@ -2,3 +2,4 @@ src/lab12
 __pycache__/
 *.pyc
 .venv/
+entregables/
