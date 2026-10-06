@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Arma los 3 entregables en entregables/ (ignorada por git):
-#   reporte_lab12.pdf    report/reporte_lab12.md -> HTML (pandoc) -> PDF (Chrome sin ventana)
+#   reporte_lab12.pdf    report/informe/informe_lab12.html -> PDF (Chrome sin ventana)
 #   evidencia_lab12.pdf  capturas de evidence/screenshots y gráficas de figures, una por página
 #   resultados_lab12.zip los 10 CSV de results/raw y los 4 *_con_S_E.csv
+#   entrega_lab12.zip    todo lo anterior junto con las 7 gráficas (lo que se sube)
 # Requiere pandoc, Google Chrome (o Chromium) y zip. Variable CHROME para otra ruta.
 set -euo pipefail
 
@@ -41,12 +42,8 @@ blockquote { border-left: 3px solid #999; margin-left: 0; padding-left: 10px; co
 .pagina img { max-height: 21cm; }
 EOF
 
-# --- 1. Reporte (las imágenes se resuelven relativas a report/) ---
-(cd "$ROOT/report" && pandoc reporte_lab12.md -s --math-method=mathml --embed-resources \
-    --css "$CSS" --metadata title="Lab 12 — Speedup" -o "$TMP/reporte.html")
-# pandoc agrega el título como h1; el reporte ya trae el suyo
-sed -i.bak '/<header id="title-block-header">/,/<\/header>/d' "$TMP/reporte.html"
-a_pdf "$TMP/reporte.html" "$OUT/reporte_lab12.pdf"
+# --- 1. Reporte: informe formal (APA, Arial) escrito en HTML ---
+a_pdf "$ROOT/report/informe/informe_lab12.html" "$OUT/reporte_lab12.pdf"
 
 # --- 2. Evidencia: una captura o gráfica por página, con título ---
 EVI="$TMP/evidencia.md"
@@ -89,6 +86,15 @@ a_pdf "$TMP/evidencia.html" "$OUT/evidencia_lab12.pdf"
 # --- 3. ZIP con los 14 CSV ---
 rm -f "$OUT/resultados_lab12.zip"
 (cd "$ROOT/results" && zip -qj "$OUT/resultados_lab12.zip" raw/*.csv derived/*_con_S_E.csv)
+
+# --- 4. ZIP de entrega: reporte, evidencia, CSV y gráficas (lo que pide la guía) ---
+ENT="$TMP/entrega_lab12"
+mkdir -p "$ENT/csv" "$ENT/graficas"
+cp "$OUT/reporte_lab12.pdf" "$OUT/evidencia_lab12.pdf" "$ENT/"
+cp "$ROOT"/results/raw/*.csv "$ROOT"/results/derived/*_con_S_E.csv "$ENT/csv/"
+cp "$ROOT"/figures/*.png "$ENT/graficas/"
+rm -f "$OUT/entrega_lab12.zip"
+(cd "$TMP" && zip -qr "$OUT/entrega_lab12.zip" entrega_lab12)
 
 rm -rf "$TMP"
 echo "Listo en $OUT:"
