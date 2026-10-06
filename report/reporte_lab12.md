@@ -494,4 +494,27 @@ Por eso los dos resultados no se contradicen: el mismo código tiene un techo de
 
 ## Síntesis
 
-_(Pendiente — Nicolás.)_
+### Qué fuga explica la eficiencia perdida en cada parte
+
+| Parte | Fuga principal | Número medido que lo demuestra |
+|---|---|---|
+| 1 — Problema fijo | **η_f** (fracción secuencial) | Con fp = 0.90 el techo es S∞ = **10** y el modelo da 7.80 con p = 32; medimos **5.91** (E = 0.185). Al despejar fp de lo medido sale **0.858** en lugar de 0.90 (P1.6): el resto lo pone el hardware. Con fp = 0.50 no pasamos de **1.84** aunque usemos 32 hilos. |
+| 2 — Suma de N números | **η_c** (comunicación y sincronización) | Con N = 16 y p = 32 la versión paralela es **≈ 15 000 veces más lenta** (30 µs de overhead frente a 2 ns de trabajo). El overhead de la región crece con p: 3.6 µs (p = 2) → 30 µs (p = 32). Con N = 65 536 y p = 32, S = 1.06: el ahorro apenas paga la sincronización. |
+| 3 — Desbalance | **η_b** (desbalance de carga) | Mismo trabajo total: `static` S(32) = **9.83** (Tp = 5.01 ms, E = 0.31) frente a `guided` **16.06** y `dynamic` 14.72 (Tp ≈ 3.4 ms). Con p = 4 el último hilo de `static` hace el **43.8 %** del trabajo y S cae a 2.03 frente a 3.55 de `dynamic`. |
+| 4 — Problema que crece | **η_f casi desaparece** | La parte secuencial pasa del 17 % al **0.6 %** del trabajo (1 − fp(32) = 0.0062) y S(32) = **15.13**, casi 3 veces el 5.1 que daba el modelo de problema fijo. s baja de 0.174 a 0.101. Lo que queda de pérdida (E = 0.47) ya no es una de las cuatro fugas, es el hardware (ver abajo). |
+
+**η_r (trabajo repetido)** casi no aparece en ningún experimento. El único trabajo extra es el del `reduction`: cada hilo inicializa su copia privada y al final se hacen p − 1 sumas para combinar los parciales. Con p = 32 son 31 sumas frente a 400 000 unidades de ≈ 1 µs en la Parte 1: despreciable. Solo en la suma con N = 16 esas sumas extra son del mismo orden que el trabajo útil, pero ahí lo que domina por mucho es η_c (microsegundos de sincronización frente a nanosegundos de sumas).
+
+### Lo que no encaja en ninguna de las cuatro fugas
+
+Las cuatro fugas suponen que todos los procesadores son iguales y que no compiten por nada. En esta laptop no es así:
+
+| Fenómeno | Número medido | Dónde |
+|---|---|---|
+| **Núcleos heterogéneos P/E e Hyper-Threading.** Los 32 hilos no rinden lo mismo: 8 núcleos P (5.6 GHz), 16 núcleos E (4.0 GHz) y, desde p = 25, dos hilos por núcleo P. Con `static` el equipo espera al más lento. Se parece a η_b, pero el trabajo sí está balanceado; lo que no está balanceado es la velocidad. | fp = 1.00: S cae de **16.28 (p = 24) a 12.81 (p = 25)**. Gustafson: Tp salta de 0.197 a 0.248 s; `guided` cae de 16.96 a 13.18. | P1.1, P3.5, P4.4 |
+| **Turbo boost.** Ts corre con un solo hilo a 5.6 GHz; con muchos núcleos activos el límite de potencia y temperatura baja la frecuencia de todos. La referencia es un procesador «más rápido» que los de Tp. | Con p = 8, todos en núcleos P propios y sin parte secuencial, E es solo **0.80**. | P1.1, P3 (predicción) |
+| **Ancho de banda de memoria compartido.** Con datos que no caben en caché, los hilos no se esperan entre sí sino que compiten por el bus de la RAM. | Suma con N = 16.7 M: S se estanca en **≈ 2.4 desde p = 4** (≈ 36 GB/s, el techo de la memoria). | P2.7 |
+| **Calentamiento y pérdida de turbo en la parte secuencial.** Después de una región con muchos hilos, el hilo principal corre más lento. | `t_parte_seq` sube **6 %** (0.0524 → 0.0555 s) de p = 1 a p = 32. | P1.6 |
+| **Ruido entre corridas.** El Ts medido cambia de una corrida a otra y mueve todos los S de esa corrida. | El Ts de `guided` salió **11 % mayor** (54.9 ms frente a 49.2 ms), lo que da E = 1.08 con p = 2. | P3.1 |
+
+El modelo de la Parte 1 mete todo esto en el mismo saco que la parte secuencial (por eso el fp despejado da 0.858 y no 0.90, y 0.965 con fp = 1.00). Para explicarlo hace falta un modelo que tome en cuenta que los procesadores no son iguales y que comparten recursos (caché, memoria, potencia), que es justo lo que viene después de la efectividad en clase.
